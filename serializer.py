@@ -1,45 +1,7 @@
-ClopsAcronyms = [None, "TRU", "FAL", "1UI", "2UI", "4UI", "1SI", "2SI", "4SI", "FLO", "STR", "SW1", "SW2", "SW3", "COP", "PSH", "POP", "MAP", "ARR", "EXT", "PUT", "GET", "EXC", "YEQ", "NEQ", "EQU", "REP", "SER", "DON"]
+ClopsAcronyms = [None, "TRU", "FAL", "1UI", "2UI", "4UI", "1SI", "2SI", "4SI", "FLO", "STR", 
+	"SW1", "SW2", "SW3", "COP", "PSH", "POP", "MAP", "ARR", "EXT", "PUT", 
+	"GET", "EXC", "YEQ", "NEQ", "EQU", "REP", "SER", "DON", "PS1","PO1","PS2","PO2","PS3","PO3"]
 Clops = dict(zip(ClopsAcronyms, range(len(ClopsAcronyms))))
-
-class CleCompiler(object):
-	@classmethod
-	def Compile(cls, obj, dest):
-		"""Create instructions that get obj into R0"""
-		if isinstance(obj,int):
-			dest.append( Clops["1UI"] )
-			dest.append( obj )
-			return
-
-		if isinstance(obj,str):
-			cls.Compile(len(obj), dest)
-			dest.append( Clops["STR"] )
-			dest.extend( ord(i) for i in obj )
-			return
-
-		if isinstance(obj,dict):
-			print "Compiling dictionary", obj
-			dest.extend( [Clops["MAP"],Clops["PSH"]] )
-			for key, val in obj.items():
-				cls.Compile(val, dest) 
-				dest.append( Clops["PSH"] )
-				cls.Compile(key, dest)
-				dest.append( Clops["SW1"] )
-				# val is on stack, key is in R1
-				dest.extend( [Clops["POP"],Clops["SW2"],Clops["POP"],Clops["SW2"]] )
-				dest.extend( [Clops["PUT"],Clops["SW2"],Clops["PSH"]] )
-			dest.append( Clops["POP"] )
-			return
-		if isinstance(obj,list):
-			print "Compiling list", obj
-			dest.extend( [Clops["1UI"],len(obj),Clops["ARR"],Clops["PSH"]] )
-			for item in obj:
-				cls.Compile(item, dest)
-				dest.extend( [Clops["SW1"],Clops["POP"],Clops["SW1"]] )
-				dest.extend( [Clops["EXT"],Clops["SW1"],Clops["PSH"]] )
-			dest.append( Clops["POP"] )
-			return
-		print "Can't compile", obj
-		return []
 
 _TRU = 1 
 _FAL = 2 
@@ -69,6 +31,12 @@ _EQU = 25
 _REP = 26 
 _SER = 27 
 _DON = 28 
+_PS1 = 29
+_PO1 = 30
+_PS2 = 31
+_PO2 = 32
+_PS3 = 33
+_PO3 = 34
 
 class CleOptimizedCompiler(object):
 	class Preserver(object):
@@ -78,17 +46,15 @@ class CleOptimizedCompiler(object):
 		def __enter__(self):
 			if self.preserves != None:
 				if "R1" in self.preserves:
-					self.dest.extend( [_SW1, _PSH] )
+					self.dest.append( _PS1 )
 				if "R2" in self.preserves:
-					self.dest.extend( [_SW2, _PSH] )
+					self.dest.append( _PS2 )
 		def __exit__(self, type, vaue, tb):
 			if self.preserves != None:
-				if "R2" in self.preserves and "R1" in self.preserves:
-					self.dest.extend( [_SW1, _POP, _SW2, _POP, _SW1] )
-				elif "R2" in self.preserves:
-					self.dest.extend( [_SW2, _POP, _SW2] )
-				elif "R1" in self.preserves:
-					self.dest.extend( [_SW1, _POP, _SW1] )
+				if "R2" in self.preserves:
+					self.dest.append( _PO2 )
+				if "R1" in self.preserves:
+					self.dest.append( _PO1 )
 
 	@classmethod
 	def Compile(cls, obj, dest, preserves=None):
@@ -127,9 +93,9 @@ class CleMemory(object):
 		self.Buffer = []
 		self.Stack = []
 	def write(self,bytes):
-		self.Buffer.extend(bytes)
+		self.Buffer = bytes[::-1] + self.Buffer
 	def read(self):
-		return self.Buffer.pop(0)
+		return self.Buffer.pop()
 	def pop(self):
 		return self.Stack.pop()
 	def push(self,val):
@@ -140,6 +106,9 @@ class CleCpu(object):
 		self.Memory = memory
 		self.Registers = [None,None,None,None]
 		self.Debug = False
+	def __repr__(self):
+		s = [repr(i)[:15] for i in self.Registers]
+		return "Registers: ["+", ".join(s)+"]"
 	def run(self):
 		try:
 			print "CPU running: ",
@@ -153,12 +122,11 @@ class CleCpu(object):
 			print ""
 			print "SEGFAULT:", e
 			print "Stack:", self.Memory.Stack
-			print "Registers:", self.Registers
+			print repr(self)
 	def cycle(self,byte):
 		if self.Debug:
-			print ClopsAcronyms[byte],
-			print "Registers:", self.Registers
 			print "Stack:", self.Memory.Stack
+			print ClopsAcronyms[byte], repr(self)
 		if byte == _SER:
 			dest = []
 			CleOptimizedCompiler.Compile(self.Registers[0], dest)
@@ -251,6 +219,27 @@ class CleCpu(object):
 						return False
 			return True
 
+		if byte == _PS1:
+			self.Memory.push(self.Registers[1])
+			return True
+		if byte == _PO1:
+			self.Registers[1] = self.Memory.pop()
+			return True
+
+		if byte == _PS2:
+			self.Memory.push(self.Registers[2])
+			return True
+		if byte == _PO2:
+			self.Registers[2] = self.Memory.pop()
+			return True
+
+		if byte == _PS3:
+			self.Memory.push(self.Registers[3])
+			return True
+		if byte == _PO3:
+			self.Registers[3] = self.Memory.pop()
+			return True
+
 
 class CleVM(object):
 	def __init__(self):
@@ -259,6 +248,7 @@ class CleVM(object):
 
 obj = {"a":1,"b":[1,2,3]}
 obj = {"accounting":[{"firstName":"John","lastName":"Doe","age":23},{"firstName":"Mary","lastName":"Smith","age":32}],"sales":[{"firstName":"Sally","lastName":"Green","age":27},{"firstName":"Jim","lastName":"Galley","age":41}]} 
+obj = {"web-app":{"servlet":[{"servlet-name":"cofaxCDS","servlet-class":"org.cofax.cds.CDSServlet","init-param":{"configGlossary:installationAt":"Philadelphia, PA","configGlossary:adminEmail":"ksm@pobox.com","configGlossary:poweredBy":"Cofax","configGlossary:poweredByIcon":"/images/cofax.gif","configGlossary:staticPath":"/content/static","templateProcessorClass":"org.cofax.WysiwygTemplate","templateLoaderClass":"org.cofax.FilesTemplateLoader","templatePath":"templates","templateOverridePath":"","defaultListTemplate":"listTemplate.htm","defaultFileTemplate":"articleTemplate.htm","useJSP":False,"jspListTemplate":"listTemplate.jsp","jspFileTemplate":"articleTemplate.jsp","cachePackageTagsTrack":200,"cachePackageTagsStore":200,"cachePackageTagsRefresh":60,"cacheTemplatesTrack":100,"cacheTemplatesStore":50,"cacheTemplatesRefresh":15,"cachePagesTrack":200,"cachePagesStore":100,"cachePagesRefresh":10,"cachePagesDirtyRead":10,"searchEngineListTemplate":"forSearchEnginesList.htm","searchEngineFileTemplate":"forSearchEngines.htm","searchEngineRobotsDb":"WEB-INF/robots.db","useDataStore":True,"dataStoreClass":"org.cofax.SqlDataStore","redirectionClass":"org.cofax.SqlRedirection","dataStoreName":"cofax","dataStoreDriver":"com.microsoft.jdbc.sqlserver.SQLServerDriver","dataStoreUrl":"jdbc:microsoft:sqlserver://LOCALHOST:1433;DatabaseName=goon","dataStoreUser":"sa","dataStorePassword":"dataStoreTestQuery","dataStoreTestQuery":"SET NOCOUNT ON;select test='test';","dataStoreLogFile":"/usr/local/tomcat/logs/datastore.log","dataStoreInitConns":10,"dataStoreMaxConns":100,"dataStoreConnUsageLimit":100,"dataStoreLogLevel":"debug","maxUrlLength":500}},{"servlet-name":"cofaxEmail","servlet-class":"org.cofax.cds.EmailServlet","init-param":{"mailHost":"mail1","mailHostOverride":"mail2"}},{"servlet-name":"cofaxAdmin","servlet-class":"org.cofax.cds.AdminServlet"},{"servlet-name":"fileServlet","servlet-class":"org.cofax.cds.FileServlet"},{"servlet-name":"cofaxTools","servlet-class":"org.cofax.cms.CofaxToolsServlet","init-param":{"templatePath":"toolstemplates/","log":1,"logLocation":"/usr/local/tomcat/logs/CofaxTools.log","logMaxSize":"","dataLog":1,"dataLogLocation":"/usr/local/tomcat/logs/dataLog.log","dataLogMaxSize":"","removePageCache":"/content/admin/remove?cache=pages&id=","removeTemplateCache":"/content/admin/remove?cache=templates&id=","fileTransferFolder":"/usr/local/tomcat/webapps/content/fileTransferFolder","lookInContext":1,"adminGroupID":4,"betaServer":True}}],"servlet-mapping":{"cofaxCDS":"/","cofaxEmail":"/cofaxutil/aemail/*","cofaxAdmin":"/admin/*","fileServlet":"/static/*","cofaxTools":"/tools/*"},"taglib":{"taglib-uri":"cofax.tld","taglib-location":"/WEB-INF/tlds/cofax.tld"}}}
 
 import time
 import microjson
@@ -269,31 +259,37 @@ vm.Memory.write([Clops["SER"],Clops["DON"]])
 
 j = time.time()
 vm.Cpu.run()
-print "Clevm encoded in", (time.time()-j)*1000, "ms"
+bytes = vm.Cpu.Registers[0]
+clvmEncodeTime = time.time()-j
+
 
 j = time.time()
 asjson = microjson.to_json(obj)
-print "Json encoded in", (time.time()-j)*1000, "ms"
-
-bytes = vm.Cpu.Registers[0]
+jsonEncodeTime = time.time()-j
 
 print "Compiled to:", bytes
-print "That's",len(bytes),"bytes"
 print "Executing"
 
 vm.Memory.write(bytes)
 
 j = time.time()
 vm.Cpu.run()
-
-print ""
-print "Clevm took", (time.time()-j)*1000, "ms"
+clvmDecodeTime = time.time() - j
 
 j = time.time()
 microjson.from_json(asjson)
-print "Json took", (time.time()-j)*1000, "ms"
+jsonDecodeTime = time.time() - j
 
 print "Registers", vm.Cpu.Registers
 print "Stack", vm.Memory.Stack
 
 print vm.Cpu.Registers[0]
+
+
+print "JSON",len(asjson),"bytes"
+print "CLVM",len(bytes),"bytes"
+
+format = "%-10s | %-10s | %-15s | %-15s"
+print format % ("Method", "Size (b)", "Encode (ms)", "Decode (ms)")
+print format % ("JSON", len(asjson), jsonEncodeTime*1000, jsonDecodeTime*1000)
+print format % ("CLVM", len(bytes), clvmEncodeTime*1000, clvmDecodeTime*1000)
