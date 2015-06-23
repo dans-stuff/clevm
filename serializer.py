@@ -40,25 +40,24 @@ _PO3 = 34
 
 class CleOptimizedCompiler(object):
 	class Preserver(object):
-		def __init__(self,dest,preserves=None):
+		def __init__(self,dest,preserves=0):
 			self.preserves = preserves
 			self.dest = dest
 		def __enter__(self):
-			if self.preserves != None:
-				if "R1" in self.preserves:
-					self.dest.append( _PS1 )
-				if "R2" in self.preserves:
-					self.dest.append( _PS2 )
+			if self.preserves & 1:
+				self.dest.append( _PS1 )
+			if self.preserves & 2:
+				self.dest.append( _PS2 )
 		def __exit__(self, type, vaue, tb):
-			if self.preserves != None:
-				if "R2" in self.preserves:
-					self.dest.append( _PO2 )
-				if "R1" in self.preserves:
-					self.dest.append( _PO1 )
+			if self.preserves & 2:
+				self.dest.append( _PO2 )
+			if self.preserves & 1:
+				self.dest.append( _PO1 )
 
 	@classmethod
-	def Compile(cls, obj, dest, preserves=None):
-		"""Create instructions that get obj into R0"""
+	def Compile(cls, obj, dest, preserves=0):
+		"""Create instructions that get obj into R0
+		Careful not to modify any registers in preserves """
 		if isinstance(obj,int):
 			dest.append( _1UI )
 			dest.append( obj )
@@ -70,17 +69,17 @@ class CleOptimizedCompiler(object):
 			with CleOptimizedCompiler.Preserver(dest, preserves):
 				dest.extend( [_MAP, _SW2] )
 				for key, val in obj.items():
-					cls.Compile(key, dest, preserves=set(("R2")))
+					cls.Compile(key, dest, preserves=2)
 					dest.append( _SW1 )
-					cls.Compile(val, dest, preserves=set(("R2","R1"))) 
+					cls.Compile(val, dest, preserves=1|2) 
 					dest.append( _PUT )
 				dest.append(_SW2)
 		elif isinstance(obj,list):
-			with CleOptimizedCompiler.Preserver(dest, preserves):
+			with CleOptimizedCompiler.Preserver(dest, preserves & 1):
 				dest.extend( [_1UI,len(obj),_ARR, _SW1] )
 
 				for item in obj:
-					cls.Compile(item, dest, preserves=set(["R1"]))
+					cls.Compile(item, dest, preserves=1)
 					dest.append( _EXT )
 				dest.append(_SW1)
 		else:
@@ -246,50 +245,73 @@ class CleVM(object):
 		self.Memory = CleMemory()
 		self.Cpu = CleCpu(self.Memory)
 
-obj = {"a":1,"b":[1,2,3]}
-obj = {"accounting":[{"firstName":"John","lastName":"Doe","age":23},{"firstName":"Mary","lastName":"Smith","age":32}],"sales":[{"firstName":"Sally","lastName":"Green","age":27},{"firstName":"Jim","lastName":"Galley","age":41}]} 
-obj = {"web-app":{"servlet":[{"servlet-name":"cofaxCDS","servlet-class":"org.cofax.cds.CDSServlet","init-param":{"configGlossary:installationAt":"Philadelphia, PA","configGlossary:adminEmail":"ksm@pobox.com","configGlossary:poweredBy":"Cofax","configGlossary:poweredByIcon":"/images/cofax.gif","configGlossary:staticPath":"/content/static","templateProcessorClass":"org.cofax.WysiwygTemplate","templateLoaderClass":"org.cofax.FilesTemplateLoader","templatePath":"templates","templateOverridePath":"","defaultListTemplate":"listTemplate.htm","defaultFileTemplate":"articleTemplate.htm","useJSP":False,"jspListTemplate":"listTemplate.jsp","jspFileTemplate":"articleTemplate.jsp","cachePackageTagsTrack":200,"cachePackageTagsStore":200,"cachePackageTagsRefresh":60,"cacheTemplatesTrack":100,"cacheTemplatesStore":50,"cacheTemplatesRefresh":15,"cachePagesTrack":200,"cachePagesStore":100,"cachePagesRefresh":10,"cachePagesDirtyRead":10,"searchEngineListTemplate":"forSearchEnginesList.htm","searchEngineFileTemplate":"forSearchEngines.htm","searchEngineRobotsDb":"WEB-INF/robots.db","useDataStore":True,"dataStoreClass":"org.cofax.SqlDataStore","redirectionClass":"org.cofax.SqlRedirection","dataStoreName":"cofax","dataStoreDriver":"com.microsoft.jdbc.sqlserver.SQLServerDriver","dataStoreUrl":"jdbc:microsoft:sqlserver://LOCALHOST:1433;DatabaseName=goon","dataStoreUser":"sa","dataStorePassword":"dataStoreTestQuery","dataStoreTestQuery":"SET NOCOUNT ON;select test='test';","dataStoreLogFile":"/usr/local/tomcat/logs/datastore.log","dataStoreInitConns":10,"dataStoreMaxConns":100,"dataStoreConnUsageLimit":100,"dataStoreLogLevel":"debug","maxUrlLength":500}},{"servlet-name":"cofaxEmail","servlet-class":"org.cofax.cds.EmailServlet","init-param":{"mailHost":"mail1","mailHostOverride":"mail2"}},{"servlet-name":"cofaxAdmin","servlet-class":"org.cofax.cds.AdminServlet"},{"servlet-name":"fileServlet","servlet-class":"org.cofax.cds.FileServlet"},{"servlet-name":"cofaxTools","servlet-class":"org.cofax.cms.CofaxToolsServlet","init-param":{"templatePath":"toolstemplates/","log":1,"logLocation":"/usr/local/tomcat/logs/CofaxTools.log","logMaxSize":"","dataLog":1,"dataLogLocation":"/usr/local/tomcat/logs/dataLog.log","dataLogMaxSize":"","removePageCache":"/content/admin/remove?cache=pages&id=","removeTemplateCache":"/content/admin/remove?cache=templates&id=","fileTransferFolder":"/usr/local/tomcat/webapps/content/fileTransferFolder","lookInContext":1,"adminGroupID":4,"betaServer":True}}],"servlet-mapping":{"cofaxCDS":"/","cofaxEmail":"/cofaxutil/aemail/*","cofaxAdmin":"/admin/*","fileServlet":"/static/*","cofaxTools":"/tools/*"},"taglib":{"taglib-uri":"cofax.tld","taglib-location":"/WEB-INF/tlds/cofax.tld"}}}
+if __name__ == "__main__":
+	obj = {"a":1,"b":[1,2,3]}
+	obj = {"accounting":[{"firstName":"John","lastName":"Doe","age":23},{"firstName":"Mary","lastName":"Smith","age":32}],"sales":[{"firstName":"Sally","lastName":"Green","age":27},{"firstName":"Jim","lastName":"Galley","age":41}]} 
+	obj = {"web-app":{"servlet":[{"servlet-name":"cofaxCDS","servlet-class":"org.cofax.cds.CDSServlet","init-param":{"configGlossary:installationAt":"Philadelphia, PA","configGlossary:adminEmail":"ksm@pobox.com","configGlossary:poweredBy":"Cofax","configGlossary:poweredByIcon":"/images/cofax.gif","configGlossary:staticPath":"/content/static","templateProcessorClass":"org.cofax.WysiwygTemplate","templateLoaderClass":"org.cofax.FilesTemplateLoader","templatePath":"templates","templateOverridePath":"","defaultListTemplate":"listTemplate.htm","defaultFileTemplate":"articleTemplate.htm","useJSP":False,"jspListTemplate":"listTemplate.jsp","jspFileTemplate":"articleTemplate.jsp","cachePackageTagsTrack":200,"cachePackageTagsStore":200,"cachePackageTagsRefresh":60,"cacheTemplatesTrack":100,"cacheTemplatesStore":50,"cacheTemplatesRefresh":15,"cachePagesTrack":200,"cachePagesStore":100,"cachePagesRefresh":10,"cachePagesDirtyRead":10,"searchEngineListTemplate":"forSearchEnginesList.htm","searchEngineFileTemplate":"forSearchEngines.htm","searchEngineRobotsDb":"WEB-INF/robots.db","useDataStore":True,"dataStoreClass":"org.cofax.SqlDataStore","redirectionClass":"org.cofax.SqlRedirection","dataStoreName":"cofax","dataStoreDriver":"com.microsoft.jdbc.sqlserver.SQLServerDriver","dataStoreUrl":"jdbc:microsoft:sqlserver://LOCALHOST:1433;DatabaseName=goon","dataStoreUser":"sa","dataStorePassword":"dataStoreTestQuery","dataStoreTestQuery":"SET NOCOUNT ON;select test='test';","dataStoreLogFile":"/usr/local/tomcat/logs/datastore.log","dataStoreInitConns":10,"dataStoreMaxConns":100,"dataStoreConnUsageLimit":100,"dataStoreLogLevel":"debug","maxUrlLength":500}},{"servlet-name":"cofaxEmail","servlet-class":"org.cofax.cds.EmailServlet","init-param":{"mailHost":"mail1","mailHostOverride":"mail2"}},{"servlet-name":"cofaxAdmin","servlet-class":"org.cofax.cds.AdminServlet"},{"servlet-name":"fileServlet","servlet-class":"org.cofax.cds.FileServlet"},{"servlet-name":"cofaxTools","servlet-class":"org.cofax.cms.CofaxToolsServlet","init-param":{"templatePath":"toolstemplates/","log":1,"logLocation":"/usr/local/tomcat/logs/CofaxTools.log","logMaxSize":"","dataLog":1,"dataLogLocation":"/usr/local/tomcat/logs/dataLog.log","dataLogMaxSize":"","removePageCache":"/content/admin/remove?cache=pages&id=","removeTemplateCache":"/content/admin/remove?cache=templates&id=","fileTransferFolder":"/usr/local/tomcat/webapps/content/fileTransferFolder","lookInContext":1,"adminGroupID":4,"betaServer":True}}],"servlet-mapping":{"cofaxCDS":"/","cofaxEmail":"/cofaxutil/aemail/*","cofaxAdmin":"/admin/*","fileServlet":"/static/*","cofaxTools":"/tools/*"},"taglib":{"taglib-uri":"cofax.tld","taglib-location":"/WEB-INF/tlds/cofax.tld"}}}
 
-import time
-import microjson
+	import time
+	import microjson
+	try:
+		import ujson
+		tryUjson = True
+	except:
+		tryUjson = False
 
-vm = CleVM()
-vm.Cpu.Registers[0] = obj
-vm.Memory.write([Clops["SER"],Clops["DON"]])
+	vm = CleVM()
+	vm.Cpu.Registers[0] = obj
+	vm.Memory.write([Clops["SER"],Clops["DON"]])
 
-j = time.time()
-vm.Cpu.run()
-bytes = vm.Cpu.Registers[0]
-clvmEncodeTime = time.time()-j
+	j = time.time()
+	vm.Cpu.run()
+	bytes = vm.Cpu.Registers[0]
+	clvmEncodeTime = time.time()-j
+
+	if tryUjson:
+		j = time.time()
+		asuson = ujson.dumps(obj)
+		usonEncodeTime = time.time()-j
+
+	j = time.time()
+	asjson = microjson.to_json(obj)
+	jsonEncodeTime = time.time()-j
+
+	print "Compiled to:", bytes
+	print "Executing"
+
+	vm.Memory.write(bytes)
+
+	j = time.time()
+	vm.Cpu.run()
+	clvmDecodeTime = time.time() - j
+
+	if tryUjson:
+		j = time.time()
+		ujson.loads(asuson)
+		usonDecodeTime = time.time() - j
+
+	j = time.time()
+	microjson.from_json(asjson)
+	jsonDecodeTime = time.time() - j
+
+	print "Registers", vm.Cpu.Registers
+	print "Stack", vm.Memory.Stack
+
+	print vm.Cpu.Registers[0]
+
+	if tryUjson:
+		print "UJSON"
+		print asuson
+
+	print "JSON"
+	print asjson
 
 
-j = time.time()
-asjson = microjson.to_json(obj)
-jsonEncodeTime = time.time()-j
-
-print "Compiled to:", bytes
-print "Executing"
-
-vm.Memory.write(bytes)
-
-j = time.time()
-vm.Cpu.run()
-clvmDecodeTime = time.time() - j
-
-j = time.time()
-microjson.from_json(asjson)
-jsonDecodeTime = time.time() - j
-
-print "Registers", vm.Cpu.Registers
-print "Stack", vm.Memory.Stack
-
-print vm.Cpu.Registers[0]
-
-
-print "JSON",len(asjson),"bytes"
-print "CLVM",len(bytes),"bytes"
-
-format = "%-10s | %-10s | %-15s | %-15s"
-print format % ("Method", "Size (b)", "Encode (ms)", "Decode (ms)")
-print format % ("JSON", len(asjson), jsonEncodeTime*1000, jsonDecodeTime*1000)
-print format % ("CLVM", len(bytes), clvmEncodeTime*1000, clvmDecodeTime*1000)
+	format = "%-10s | %-12s | %-15s | %-15s"
+	print format % ("Method", "Size (b)", "Encode (ms)", "Decode (ms)")
+	print format % ("JSON", len(asjson), jsonEncodeTime*1000, jsonDecodeTime*1000)
+	if tryUjson:
+		print format % ("UJSON", len(asuson), usonEncodeTime*1000, usonDecodeTime*1000)
+	else:
+		print format % ("UJSON", "Unavailable", "", "")
+	print format % ("CLVM", len(bytes), clvmEncodeTime*1000, clvmDecodeTime*1000)
